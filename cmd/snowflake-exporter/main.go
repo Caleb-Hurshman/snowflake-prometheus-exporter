@@ -84,6 +84,7 @@ func main() {
 	}
 
 	col := collector.NewCollector(logger, c)
+	// collector.InitCache(logger)
 
 	// Register collector with prometheus client library
 	prometheus.MustRegister(version.NewCollector(exporterName))

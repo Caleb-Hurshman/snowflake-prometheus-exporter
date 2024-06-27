@@ -42,6 +42,26 @@ const (
 	labelSize          = "size"
 )
 
+// var cacheConfig = bigcache.Config{
+// 	Shards:             1024,
+// 	LifeWindow:         10 * time.Minute,
+// 	CleanWindow:        3 * time.Minute,
+// 	MaxEntriesInWindow: 1000 * 10 * 60,
+// 	MaxEntrySize:       500,
+// 	Verbose:            false,
+// 	HardMaxCacheSize:   8192,
+// 	OnRemove:           nil,
+// 	OnRemoveWithReason: nil,
+// }
+
+// var Cache, cacheInitErr = bigcache.New(context.Background(), cacheConfig)
+
+var (
+	lastStorageMetrics  sql.NullFloat64
+	lastStageMetrics    sql.NullFloat64
+	lastFailsafeMetrics sql.NullFloat64
+)
+
 // openSnowflakeDatabase opens a connection to a Snowflake database using the given connection string.
 func openSnowflakeDatabase(connStr string) (*sql.DB, error) {
 	return sql.Open("snowflake", connStr)
@@ -283,6 +303,10 @@ func (c *Collector) Describe(descs chan<- *prometheus.Desc) {
 // Collect collects all metrics for this collector, and emits them through the provided channel.
 // It implements prometheus.Collector.
 func (c *Collector) Collect(metrics chan<- prometheus.Metric) {
+	// if cacheInitErr != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to initialize metric cache", "err", cacheInitErr)
+	// }
+
 	level.Debug(c.logger).Log("msg", "Collecting metrics.")
 
 	var up float64 = 1
@@ -307,51 +331,69 @@ func (c *Collector) Collect(metrics chan<- prometheus.Metric) {
 		level.Error(c.logger).Log("msg", "Failed to collect storage metrics.", "err", err)
 		up = 0
 	}
+	fmt.Printf("Cached storage metrics: %f\n", lastStorageMetrics.Float64)
+	fmt.Printf("Cached stage metrics: %f\n", lastStageMetrics.Float64)
+	fmt.Printf("Cached failsafe metrics: %f\n", lastFailsafeMetrics.Float64)
 
-	if err := c.collectDatabaseStorageMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect database storage metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectDatabaseStorageMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect database storage metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectCreditMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect credit metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectCreditMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect credit metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectWarehouseCreditMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect warehouse credit metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectWarehouseCreditMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect warehouse credit metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectLoginMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect login metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectLoginMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect login metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectWarehouseLoadMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect warehouse load metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectWarehouseLoadMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect warehouse load metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectAutoClusteringMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect autoclustering metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectAutoClusteringMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect autoclustering metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectTableStorageMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect table storage metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectTableStorageMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect table storage metrics.", "err", err)
+	// 	up = 0
+	// }
 
-	if err := c.collectReplicationMetrics(db, metrics); err != nil {
-		level.Error(c.logger).Log("msg", "Failed to collect replication metrics.", "err", err)
-		up = 0
-	}
+	// if err := c.collectReplicationMetrics(db, metrics); err != nil {
+	// 	level.Error(c.logger).Log("msg", "Failed to collect replication metrics.", "err", err)
+	// 	up = 0
+	// }
 
 	metrics <- prometheus.MustNewConstMetric(c.up, prometheus.GaugeValue, up)
+	fmt.Println("Done collecting")
 }
 
 func (c *Collector) collectStorageMetrics(db *sql.DB, metrics chan<- prometheus.Metric) error {
+	// TODO: add similar block to every section, see if cached metrics will return early while queries are still executing
+	if lastStorageMetrics.Valid {
+		fmt.Println("Sending cached storage metrics")
+		metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, lastStorageMetrics.Float64)
+	}
+	if lastStageMetrics.Valid {
+		fmt.Println("Sending cached stage metrics")
+		metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, lastStageMetrics.Float64)
+	}
+	if lastFailsafeMetrics.Valid {
+		fmt.Println("Sending cached failsafe metrics")
+		metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, lastFailsafeMetrics.Float64)
+	}
+
 	rows, err := db.Query(storageMetricQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query metrics: %w", err)
@@ -370,20 +412,76 @@ func (c *Collector) collectStorageMetrics(db *sql.DB, metrics chan<- prometheus.
 		return fmt.Errorf("failed to scan row: %w", err)
 	}
 
+	// return cached values
+	// if Cache.Len() != 0 {
+	// 	cachedStorageMetrics, err := Cache.Get("storageBytes")
+	// 	if err != nil {
+	// 		level.Error(c.logger).Log("msg", "Error getting storage metric value from cache", "err", err)
+	// 	}
+	// 	if cachedStorageMetrics, ok := cachedStorageMetrics.(float64); ok {
+	// 		metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, float64(cachedStorageMetrics))
+	// 	}
+	// }
 	if storageBytes.Valid {
-		metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, storageBytes.Float64)
+		if !lastStorageMetrics.Valid {
+			fmt.Println("Sending non-cached metrics")
+			metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, storageBytes.Float64)
+		}
+		lastStorageMetrics = storageBytes
+
+		// storageBytesValue, err := storageBytes.Value()
+		// if err != nil {
+		// 	level.Error(c.logger).Log("msg", "Error getting storage metric value", "err", err)
+		// }
+		// if storageBytesValue, ok := storageBytesValue.([]byte); ok {
+		// 	Cache.Set("storageBytes", []byte(storageBytesValue))
+		// }
+
 	}
 	if stageBytes.Valid {
-		metrics <- prometheus.MustNewConstMetric(c.stageBytes, prometheus.GaugeValue, stageBytes.Float64)
+		if !lastStageMetrics.Valid {
+			fmt.Println("Sending non-cached stage metrics")
+			metrics <- prometheus.MustNewConstMetric(c.stageBytes, prometheus.GaugeValue, stageBytes.Float64)
+		}
+		lastStageMetrics = stageBytes
+
+		// stageBytesValue, err := stageBytes.Value()
+		// if err != nil {
+		// 	level.Error(c.logger).Log("msg", "Error getting stage metric value", "err", err)
+		// }
+		// if stageBytesValue, ok := stageBytesValue.([]byte); ok {
+		// 	Cache.Set("stageBytes", []byte(stageBytesValue))
+		// }
 	}
 	if failsafeBytes.Valid {
-		metrics <- prometheus.MustNewConstMetric(c.failsafeBytes, prometheus.GaugeValue, failsafeBytes.Float64)
+		if !lastFailsafeMetrics.Valid {
+			fmt.Println("Sending non-cached failsafe metrics")
+			metrics <- prometheus.MustNewConstMetric(c.failsafeBytes, prometheus.GaugeValue, failsafeBytes.Float64)
+		}
+		lastFailsafeMetrics = failsafeBytes
+
+		// 	failsafeBytesValue, err := failsafeBytes.Value()
+		// 	if err != nil {
+		// 		level.Error(c.logger).Log("msg", "Error getting failsafe metric value", "err", err)
+		// 	}
+		// 	if failsafeBytesValue, ok := failsafeBytesValue.([]byte); ok {
+		// 		Cache.Set("failsafeBytes", []byte(failsafeBytesValue))
+		// 	}
 	}
 
 	return rows.Err()
 }
 
 func (c *Collector) collectDatabaseStorageMetrics(db *sql.DB, metrics chan<- prometheus.Metric) error {
+	// if lastDatabaseMetrics.Valid {
+	// 	fmt.Println("Sending cached database metrics")
+	// 	metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, lastDatabaseMetrics.Float64, dbName.String, dbID.String)
+	// }
+	// if lastFailsafeMetrics.Valid {
+	// 	fmt.Println("Sending cached failsafe metrics")
+	// 	metrics <- prometheus.MustNewConstMetric(c.storageBytes, prometheus.GaugeValue, lastFailsafeMetrics.Float64, dbName.String, dbID.String)
+	// }
+
 	rows, err := db.Query(databaseStorageMetricQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query metrics: %w", err)
@@ -409,6 +507,7 @@ func (c *Collector) collectDatabaseStorageMetrics(db *sql.DB, metrics chan<- pro
 }
 
 func (c *Collector) collectCreditMetrics(db *sql.DB, metrics chan<- prometheus.Metric) error {
+
 	rows, err := db.Query(creditMetricQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query metrics: %w", err)
@@ -610,3 +709,10 @@ func (c *Collector) collectReplicationMetrics(db *sql.DB, metrics chan<- prometh
 
 	return rows.Err()
 }
+
+// func InitCache(logger log.Logger) {
+// 	var Cache, initErr = bigcache.New(context.Background(), cacheConfig)
+// 	if initErr != nil {
+// 		level.Error(logger).Log("msg", "Failed to initialize metric cache", "err", initErr)
+// 	}
+// }
